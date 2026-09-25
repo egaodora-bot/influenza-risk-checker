@@ -8,9 +8,17 @@ DATA_FILE = "data/history.json"
 OUTPUT_DIR = "output"
 
 def load_history():
+    """history.jsonを安全に読み込む（ファイルが空や不正でもエラーで落とさない）"""
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if not content:
+                    return []
+                return json.loads(content)
+        except json.JSONDecodeError:
+            print("警告: history.jsonの形式が不正だったため、初期化します。")
+            return []
     return []
 
 def save_history(history):
@@ -53,14 +61,12 @@ def main():
         history = [{"date": d, "value": history_dict[d]} for d in sorted_dates]
         history = history[-60:]
     elif not history or len(history) <= 1:
-        # API制限などで取得できない場合でも、綺麗な折れ線グラフになるよう過去30日分のダミーを生成
         print("APIからの複数日データ取得が制限されているため、サンプル推移データで描画します。")
         base_date = datetime.date.today() - datetime.timedelta(days=30)
         history = []
         base_val = 20
         for i in range(31):
             d_str = (base_date + datetime.timedelta(days=i)).isoformat()
-            # 緩やかに増減するサンプル値
             base_val = max(10, min(90, base_val + (i % 3 - 1) * 5 + 3))
             history.append({"date": d_str, "value": base_val})
 
