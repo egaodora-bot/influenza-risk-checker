@@ -16,10 +16,17 @@
     <p>過去のデータ推移、現状の分析、および今後の展望予測を自動収集して表示するページです。</p>
     
     <div class="card">
-        <h2>📊 トレンド推移・予測グラフ</h2>
-        <!-- プログラムが自動生成するグラフ画像を表示 (キャッシュ回避用の ?v=2 を追加) -->
-        <img src="output/trend_chart.png?v=2" alt="Trend Chart" onerror="this.style.display='none'; document.getElementById('no-image').style.display='block';">
-        <p id="no-image" style="color: #666; display:none;">（※まだグラフ画像が生成されていません。プログラムの初回実行をお待ちください。）</p>
+        <h2>📊 トレンド推移・予測グラフ（全国）</h2>
+        <!-- プログラムが自動生成するグラフ画像を表示 -->
+        <img src="output/trend_chart.png?v=2" alt="Trend Chart" onerror="this.style.display='none'; document.getElementById('no-image-1').style.display='block';">
+        <p id="no-image-1" style="color: #666; display:none;">（※まだグラフ画像が生成されていません。）</p>
+    </div>
+
+    <div class="card">
+        <h2>🗾 都道府県別検索トレンド（上位15都道府県）</h2>
+        <!-- 都道府県別の棒グラフ画像を表示 -->
+        <img src="output/region_chart.png?v=2" alt="Region Chart" onerror="this.style.display='none'; document.getElementById('no-image-2').style.display='block';">
+        <p id="no-image-2" style="color: #666; display:none;">（※まだ都道府県別グラフ画像が生成されていません。）</p>
     </div>
 </body>
 </html>
