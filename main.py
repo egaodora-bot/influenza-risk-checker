@@ -104,10 +104,8 @@ def main():
     # ── [2] 以前の都道府県別データを読み込み（比較用） ──
     prev_regional_data = load_previous_region_data()
 
-    # ── [3] 最新の都道府県別データを取得して保存 ──
+    # ── [3] 最新の都道府県別データを取得 ──
     regional_data = fetch_regional_trend()
-    if regional_data:
-        save_region_data(regional_data)
 
     # ── [4] 全国トレンド時系列グラフの生成 ──
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -146,11 +144,14 @@ def main():
         else:
             plt.rcParams['font.family'] = 'sans-serif'
 
-        # 前回データがある場合は「増加量（差分）」を計算。初回などで無い場合は現在の値を使用
+        # 前回データがある場合は「増加量（差分）」を計算。初回などで無い場合は0とする
         diff_data = {}
         for pref, current_val in regional_data.items():
-            prev_val = prev_regional_data.get(pref, current_val) # 初回は差分0または現在値
-            diff_data[pref] = current_val - prev_val
+            if prev_regional_data:
+                prev_val = prev_regional_data.get(pref, current_val)
+                diff_data[pref] = current_val - prev_val
+            else:
+                diff_data[pref] = 0  # 初回データがない時は差分0
 
         # 増加量が大きい順にソート（同点の場合は現在のスコアが高い順）
         sorted_diff = sorted(diff_data.items(), key=lambda x: (x[1], regional_data.get(x[0], 0)), reverse=True)
@@ -162,7 +163,7 @@ def main():
         region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
         plt.figure(figsize=(10, 4.5))
         
-        # 増加傾向がわかりやすいように色を調整（プラスならオレンジ/赤系、0なら青系など）
+        # 増加傾向がわかりやすいように色を調整（プラスならオレンジ、0やマイナスなら青系）
         colors = ['#e67e22' if d > 0 else '#3498db' for d in diffs]
         
         plt.bar(prefs, diffs, color=colors)
@@ -176,6 +177,9 @@ def main():
         plt.savefig(region_chart_path)
         plt.close()
         print(f"都道府県別・増加トレンドグラフを生成しました: {region_chart_path}")
+        
+        # ── [6] 比較が終わったあとに、今回の最新データを次回の比較用に保存する ──
+        save_region_data(regional_data)
     else:
         print("警告: regional_data が空のため、都道府県別グラフは生成されませんでした。")
 
