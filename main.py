@@ -1,173 +1,262 @@
 import os
-import json
-import datetime
+from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from pytrends.request import TrendReq
 
-DATA_FILE = "data/history.json"
-REGION_HISTORY_FILE = "data/region_history.json"  # 変更: 都道府県データの履歴を蓄積するファイル
-OUTPUT_DIR = "output"
+# 日本語フォントの設定（Linux環境・GitHub Actions用）
+font_path = '/usr/share/fonts/truetype/fonts-ipafont-gothic/ipag.ttf'
+if os.path.exists(font_path):
+    font_prop = fm.FontProperties(fname=font_path)
+    plt.rcParams['font.family'] = font_prop.get_name()
+else:
+    plt.rcParams['font.sans-serif'] = ['IPAexGothic', 'VL Gothic', 'TakaoPGothic', 'sans-serif']
 
-def load_json(file_path, default_val):
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if not content:
-                    return default_val
-                return json.loads(content)
-        except json.JSONDecodeError:
-            return default_val
-    return default_val
+plt.rcParams['axes.unicode_minus'] = False
 
-def save_json(file_path, data):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+# 出力ディレクトリの作成
+os.makedirs('output', exist_ok=True)
+os.makedirs('data', exist_ok=True)
 
-def fetch_influenza_trend():
+# 監視する感染症の定義（キーワードと表示名）
+diseases = {
+    'influenza': {
+        'name': 'インフルエンザ',
+        'keyword': 'インフルエンザ 症状',
+        'color': '#ff7f0e'
+    },
+    'covid19': {
+        'name': '新型コロナウイルス',
+        'keyword': 'コロナ 症状',
+        'color': '#1f77b4'
+    }
+}
+
+pytrends = TrendReq(hl='ja-JP', tz=324)
+
+# グラフ画像を生成して保存する処理
+for key, info in diseases.items():
     try:
-        pytrends = TrendReq(hl='ja-JP', tz=540)
-        pytrends.build_payload(['インフルエンザ'], timeframe='today 1-m', geo='JP')
+        pytrends.build_payload([info['keyword']], timeframe='today 3-m', geo='JP')
         df = pytrends.interest_over_time()
         
-        if not df.empty and 'インフルエンザ' in df.columns:
-            trend_data = []
-            for date_val, row in df.iterrows():
-                date_str = date_val.strftime('%Y-%m-%d')
-                value = int(row['インフルエンザ'])
-                trend_data.append({"date": date_str, "value": value})
-            if len(trend_data) > 1:
-                return trend_data
+        if not df.empty:
+            plt.figure(figsize=(10, 4))
+            plt.plot(df.index, df[info['keyword']], marker='o', color=info['color'], linewidth=2)
+            plt.title(f'{info["name"]}の検索トレンド推移（過去3ヶ月・全国）', fontsize=12)
+            plt.xlabel('日付', fontsize=10)
+            plt.ylabel('検索関心度', fontsize=10)
+            plt.grid(True, linestyle='--', alpha=0.6)
+            plt.tight_layout()
+            
+            plt.savefig(f'output/trend_{key}.png', dpi=150)
+            plt.close()
     except Exception as e:
-        print(f"時系列データ取得エラー: {e}")
-    return None
+        print(f"Error fetching data for {key}: {e}")
 
-def fetch_regional_trend():
-    try:
-        pytrends = TrendReq(hl='ja-JP', tz=540)
-        pytrends.build_payload(['インフルエンザ'], timeframe='today 1-m', geo='JP')
-        df_region = pytrends.interest_by_region(resolution='REGION', inc_low_vol=True, inc_geo_code=False)
-        
-        if not df_region.empty and 'インフルエンザ' in df_region.columns:
-            regional_data = {}
-            today_str = datetime.date.today().isoformat()
-            for pref, row in df_region.iterrows():
-                regional_data[pref] = int(row['インフルエンザ'])
-            return {"date": today_str, "data": regional_data}
-    except Exception as e:
-        print(f"都道府県別データ取得エラー: {e}")
-    return None
+# 最終更新日時の取得
+update_time = datetime.now().strftime('%Y年%m月%d日 %H:%M')
 
-def main():
-    # ── [1] 全国時系列データの処理 ──
-    history = load_json(DATA_FILE, [])
-    fetched_data = fetch_influenza_trend()
-    
-    if fetched_data:
-        history_dict = {item['date']: item['value'] for item in history}
-        for item in fetched_data:
-            history_dict[item['date']] = item['value']
-        
-        sorted_dates = sorted(history_dict.keys())
-        history = [{"date": d, "value": history_dict[d]} for d in sorted_dates]
-        history = history[-60:]
-    elif not history or len(history) <= 1:
-        base_date = datetime.date.today() - datetime.timedelta(days=30)
-        history = []
-        base_val = 20
-        for i in range(31):
-            d_str = (base_date + datetime.timedelta(days=i)).isoformat()
-            base_val = max(10, min(90, base_val + (i % 3 - 1) * 5 + 3))
-            history.append({"date": d_str, "value": base_val})
+# 誰もが使いやすく、スリープ対策ガイドや折りたたみ説明を組み込んだ HTML を生成
+html_content = f"""<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>総合感染症・トレンド速報ダッシュボード</title>
+    <style>
+        body {{
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+            background-color: #f4f6f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }}
+        .container {{
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }}
+        h1 {{
+            font-size: 22px;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }}
+        .update-time {{
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }}
+        /* 折りたたみガイドのデザイン */
+        details {{
+            background: #eef2f7;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 5px solid #3498db;
+        }}
+        summary {{
+            font-weight: bold;
+            cursor: pointer;
+            color: #2980b9;
+        }}
+        .guide-content {{
+            margin-top: 10px;
+            font-size: 14px;
+        }}
+        /* タブメニューのデザイン */
+        .tab-menu {{
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }}
+        .tab-btn {{
+            padding: 10px 20px;
+            background: #e0e0e0;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            color: #555;
+            transition: background 0.2s;
+        }}
+        .tab-btn.active {{
+            background: #3498db;
+            color: white;
+        }}
+        .tab-content {{
+            display: none;
+        }}
+        .tab-content.active {{
+            display: block;
+        }}
+        .section-box {{
+            background: #fafbfc;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }}
+        h2 {{
+            font-size: 18px;
+            color: #34495e;
+            margin-top: 0;
+        }}
+        img {{
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }}
+        ul {{
+            margin: 0;
+            padding-left: 20px;
+            font-size: 14px;
+        }}
+        li {{
+            margin-bottom: 8px;
+        }}
+        .sleep-notice {{
+            background: #fff8e1;
+            border-left: 5px solid #ffb300;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 30px;
+        }}
+    </style>
+    <script>
+        function switchTab(tabId) {{
+            // すべてのタブボタンとコンテンツのactiveを外す
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // 選択されたタブとコンテンツにactiveを付与
+            document.getElementById('btn-' + tabId).classList.add('active');
+            document.getElementById('content-' + tabId).classList.add('active');
+        }}
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>総合感染症・トレンド速報ダッシュボード</h1>
+        <div class="update-time">最終更新日時：{update_time}</div>
 
-    save_json(DATA_FILE, history)
+        <!-- 初めての方への使い方（折りたたみ） -->
+        <details>
+            <summary>【初めての方へ】このダッシュボードの見方・使い方</summary>
+            <div class="guide-content">
+                <ul>
+                    <li><strong>目的：</strong>現在日本国内でどのような感染症の関心や流行兆候があるかを、検索トレンドから素早く把握するためのツールです。</li>
+                    <li><strong>使い方：</strong>下のタブから見たい感染症（インフルエンザ、新型コロナウイルスなど）を切り替えて、全国の推移グラフを確認できます。</li>
+                    <li><strong>予防の意識：</strong>日々の変化をチェックし、手洗いや換気などの基本的な感染対策にお役立てください。</li>
+                </ul>
+            </div>
+        </details>
 
-    # ── [2] 都道府県別データの履歴蓄積・管理 ──
-    region_history = load_json(REGION_HISTORY_FILE, [])
-    latest_region_entry = fetch_regional_trend()
+        <!-- 感染症切り替えタブ -->
+        <div class="tab-menu">
+            <button id="btn-influenza" class="tab-btn active" onclick="switchTab('influenza')">インフルエンザ</button>
+            <button id="btn-covid19" class="tab-btn" onclick="switchTab('covid19')">新型コロナウイルス</button>
+        </div>
 
-    if latest_region_entry:
-        # すでに今日のデータがあれば更新、なければ追加
-        region_history = [item for item in region_history if item.get('date') != latest_region_entry['date']]
-        region_history.append(latest_region_entry)
-        # 直近14日分の履歴を保持
-        region_history = sorted(region_history, key=lambda x: x['date'])[-14:]
-        save_json(REGION_HISTORY_FILE, region_history)
+        <!-- インフルエンザタブの内容 -->
+        <div id="content-influenza" class="tab-content active">
+            <div class="section-box">
+                <h2>📈 インフルエンザの全国検索トレンド</h2>
+                <p style="font-size: 14px; color: #666;">過去3ヶ月間の「インフルエンザ 症状」に関する検索関心度の推移です。</p>
+                <img src="trend_influenza.png" alt="インフルエンザトレンドグラフ">
+            </div>
+            <div class="section-box">
+                <h2>💡 今の傾向と推奨される予防策</h2>
+                <ul>
+                    <li><strong>傾向：</strong>季節の変わり目や気温の変化に伴い、発熱や咳などの症状に関する検索が変動します。グラフの山が高くなっている時期は特に注意が必要です。</li>
+                    <li><strong>予防策：</strong>帰宅時や食事前のこまめな手洗い・アルコール消毒、適度な湿度の保持（50〜60%）、定期的な室内の換気を心がけましょう。</li>
+                </ul>
+            </div>
+        </div>
 
-    # ── [3] 全国トレンド時系列グラフの生成 ──
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    chart_path = os.path.join(OUTPUT_DIR, "trend_chart.png")
+        <!-- 新型コロナウイルス内容的タブ -->
+        <div id="content-covid19" class="tab-content">
+            <div class="section-box">
+                <h2>📈 新型コロナウイルスの全国検索トレンド</h2>
+                <p style="font-size: 14px; color: #666;">過去3ヶ月間の「コロナ 症状」に関する検索関心度の推移です。</p>
+                <img src="trend_covid19.png" alt="新型コロナウイルステロンドグラフ">
+            </div>
+            <div class="section-box">
+                <h2>💡 今の傾向と推奨される予防策</h2>
+                <ul>
+                    <li><strong>傾向：</strong>人の移動やイベントが活発になる時期や季節の変わり目に感染者数・検索数が変動する傾向があります。</li>
+                    <li><strong>予防策：</strong>換気の悪い密閉空間や混雑した場所でのマスク着用や換気の徹底、体調不良時の無理のない療養が効果的です。</li>
+                </ul>
+            </div>
+        </div>
 
-    if len(history) > 0:
-        dates = [item['date'] for item in history]
-        values = [item['value'] for item in history]
+        <!-- スリープ・接続切れ時の復帰ガイド -->
+        <div class="sleep-notice">
+            <strong>⚠️ 画面がフリーズしたり、動かなくなった（スリープ状態・ZZZ…）場合について</strong><br>
+            長時間ブラウザを開いたままにして端末がスリープ状態になると、画面が正しく更新されなくなることがあります。その場合は、お手数ですが以下の方法で画面を再読み込みしてください：
+            <ul style="margin-top: 5px; margin-bottom: 0;">
+                <li><strong>スマートフォン（iPhone / Android）の場合：</strong> 画面の一番上を下に引っ張って離す（スワイプダウン）、またはブラウザのアドレスバー横にある<strong>「丸い矢印のアイコン（🔄）」</strong>をタップします。</li>
+                <li><strong>パソコンの場合：</strong> キーボードの <strong><code>F5</code> キー</strong> を押すか、ブラウザの左上にある<strong>「丸い矢印のボタン（🔄）」</strong>をクリックしてください。</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
+"""
 
-        plt.figure(figsize=(10, 4.5))
-        plt.plot(dates, values, marker='o', color='#e74c3c', linewidth=2, label='Influenza Search Index (Japan)')
-        plt.title("Infection Risk Trend Monitor (Google Trends: Influenza)", fontsize=11)
-        plt.xlabel("Date")
-        plt.ylabel("Search Index (0-100)")
-        plt.xticks(rotation=45)
-        plt.grid(True, linestyle='--', alpha=0.6)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
+# HTMLファイルとして出力（output/index.html もしくは直下）
+with open('output/index.html', 'w', encoding='utf-8') as f:
+    f.write(html_content)
 
-    # ── [4] 都道府県別の「過去平均との比較（増加トレンド）」グラフ生成 ──
-    print(f"debug: region_history の蓄積日数 = {len(region_history)}")
-    if len(region_history) >= 2:
-        # 日本語フォント設定
-        font_path = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
-        if not os.path.exists(font_path):
-            for f in fm.findSystemFonts(fontpaths=None, fontext='ttf'):
-                if 'ipag' in f.lower() or 'gothic' in f.lower():
-                    font_path = f
-                    break
-        
-        if os.path.exists(font_path):
-            jp_font = fm.FontProperties(fname=font_path)
-            plt.rcParams['font.family'] = jp_font.get_name()
-        else:
-            plt.rcParams['font.family'] = 'sans-serif'
-
-        current_data = region_history[-1]['data']
-        # 過去のデータ（一番古いもの、または数日前の中央値など）を比較対象にする
-        past_data = region_history[0]['data']
-
-        diff_data = {}
-        for pref, current_val in current_data.items():
-            past_val = past_data.get(pref, current_val)
-            # 過去数日間の平均や変化量を計算してスムーズにする
-            diff_data[pref] = current_val - past_val
-
-        # 増加量が大きい順にソート
-        sorted_diff = sorted(diff_data.items(), key=lambda x: (x[1], current_data.get(x[0], 0)), reverse=True)
-        items_list = sorted_diff[:15]
-        
-        prefs = [item[0] for item in items_list]
-        diffs = [item[1] for item in items_list]
-
-        region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
-        plt.figure(figsize=(10, 4.5))
-        
-        colors = ['#e67e22' if d > 0 else '#3498db' for d in diffs]
-        
-        plt.bar(prefs, diffs, color=colors)
-        plt.title("都道府県別インフルエンザ検索関心度の増加トレンド（過去からの変化・上位15都府県）", fontsize=11)
-        plt.xlabel("都道府県", fontsize=10)
-        plt.ylabel("過去からの増減ポイント", fontsize=10)
-        plt.xticks(rotation=45, ha='right')
-        plt.grid(True, linestyle='--', alpha=0.6, axis='y')
-        plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
-        plt.tight_layout()
-        plt.savefig(region_chart_path)
-        plt.close()
-        print(f"都道府県別・増加トレンドグラフを生成しました: {region_chart_path}")
-    else:
-        print("情報: 比較するための過去データがまだ蓄積中のため、数日後に本格的なグラフが描画されます。")
-
-if __name__ == "__main__":
-    main()
+print("Dashboard HTML generated successfully.")
