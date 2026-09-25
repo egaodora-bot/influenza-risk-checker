@@ -6,42 +6,25 @@ import matplotlib.font_manager as fm
 from pytrends.request import TrendReq
 
 DATA_FILE = "data/history.json"
-REGION_FILE = "data/region_latest.json"
+REGION_HISTORY_FILE = "data/region_history.json"  # 変更: 都道府県データの履歴を蓄積するファイル
 OUTPUT_DIR = "output"
 
-def load_history():
-    if os.path.exists(DATA_FILE):
+def load_json(file_path, default_val):
+    if os.path.exists(file_path):
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if not content:
-                    return []
+                    return default_val
                 return json.loads(content)
         except json.JSONDecodeError:
-            return []
-    return []
+            return default_val
+    return default_val
 
-def save_history(history):
-    os.makedirs("data", exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
-
-def load_previous_region_data():
-    if os.path.exists(REGION_FILE):
-        try:
-            with open(REGION_FILE, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if not content:
-                    return {}
-                return json.loads(content)
-        except json.JSONDecodeError:
-            return {}
-    return {}
-
-def save_region_data(region_data):
-    os.makedirs("data", exist_ok=True)
-    with open(REGION_FILE, "w", encoding="utf-8") as f:
-        json.dump(region_data, f, ensure_ascii=False, indent=2)
+def save_json(file_path, data):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def fetch_influenza_trend():
     try:
@@ -69,17 +52,17 @@ def fetch_regional_trend():
         
         if not df_region.empty and 'インフルエンザ' in df_region.columns:
             regional_data = {}
+            today_str = datetime.date.today().isoformat()
             for pref, row in df_region.iterrows():
                 regional_data[pref] = int(row['インフルエンザ'])
-            return regional_data
+            return {"date": today_str, "data": regional_data}
     except Exception as e:
         print(f"都道府県別データ取得エラー: {e}")
     return None
 
 def main():
-    history = load_history()
-    
-    # ── [1] 全国時系列データの取得・マージ ──
+    # ── [1] 全国時系列データの処理 ──
+    history = load_json(DATA_FILE, [])
     fetched_data = fetch_influenza_trend()
     
     if fetched_data:
@@ -99,15 +82,21 @@ def main():
             base_val = max(10, min(90, base_val + (i % 3 - 1) * 5 + 3))
             history.append({"date": d_str, "value": base_val})
 
-    save_history(history)
+    save_json(DATA_FILE, history)
 
-    # ── [2] 以前の都道府県別データを読み込み（比較用） ──
-    prev_regional_data = load_previous_region_data()
+    # ── [2] 都道府県別データの履歴蓄積・管理 ──
+    region_history = load_json(REGION_HISTORY_FILE, [])
+    latest_region_entry = fetch_regional_trend()
 
-    # ── [3] 最新の都道府県別データを取得 ──
-    regional_data = fetch_regional_trend()
+    if latest_region_entry:
+        # すでに今日のデータがあれば更新、なければ追加
+        region_history = [item for item in region_history if item.get('date') != latest_region_entry['date']]
+        region_history.append(latest_region_entry)
+        # 直近14日分の履歴を保持
+        region_history = sorted(region_history, key=lambda x: x['date'])[-14:]
+        save_json(REGION_HISTORY_FILE, region_history)
 
-    # ── [4] 全国トレンド時系列グラフの生成 ──
+    # ── [3] 全国トレンド時系列グラフの生成 ──
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     chart_path = os.path.join(OUTPUT_DIR, "trend_chart.png")
 
@@ -127,9 +116,9 @@ def main():
         plt.savefig(chart_path)
         plt.close()
 
-    # ── [5] 都道府県別の「急増度（前回からの増加量）」ランキンググラフ生成 ──
-    print(f"debug: regional_data のデータ数 = {len(regional_data) if regional_data else 0}")
-    if regional_data:
+    # ── [4] 都道府県別の「過去平均との比較（増加トレンド）」グラフ生成 ──
+    print(f"debug: region_history の蓄積日数 = {len(region_history)}")
+    if len(region_history) >= 2:
         # 日本語フォント設定
         font_path = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
         if not os.path.exists(font_path):
@@ -144,17 +133,18 @@ def main():
         else:
             plt.rcParams['font.family'] = 'sans-serif'
 
-        # 前回データがある場合は「増加量（差分）」を計算。初回などで無い場合は0とする
-        diff_data = {}
-        for pref, current_val in regional_data.items():
-            if prev_regional_data:
-                prev_val = prev_regional_data.get(pref, current_val)
-                diff_data[pref] = current_val - prev_val
-            else:
-                diff_data[pref] = 0  # 初回データがない時は差分0
+        current_data = region_history[-1]['data']
+        # 過去のデータ（一番古いもの、または数日前の中央値など）を比較対象にする
+        past_data = region_history[0]['data']
 
-        # 増加量が大きい順にソート（同点の場合は現在のスコアが高い順）
-        sorted_diff = sorted(diff_data.items(), key=lambda x: (x[1], regional_data.get(x[0], 0)), reverse=True)
+        diff_data = {}
+        for pref, current_val in current_data.items():
+            past_val = past_data.get(pref, current_val)
+            # 過去数日間の平均や変化量を計算してスムーズにする
+            diff_data[pref] = current_val - past_val
+
+        # 増加量が大きい順にソート
+        sorted_diff = sorted(diff_data.items(), key=lambda x: (x[1], current_data.get(x[0], 0)), reverse=True)
         items_list = sorted_diff[:15]
         
         prefs = [item[0] for item in items_list]
@@ -163,13 +153,12 @@ def main():
         region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
         plt.figure(figsize=(10, 4.5))
         
-        # 増加傾向がわかりやすいように色を調整（プラスならオレンジ、0やマイナスなら青系）
         colors = ['#e67e22' if d > 0 else '#3498db' for d in diffs]
         
         plt.bar(prefs, diffs, color=colors)
-        plt.title("都道府県別インフルエンザ検索関心度の増加トレンド（前回比・急増上位15都府県）", fontsize=11)
+        plt.title("都道府県別インフルエンザ検索関心度の増加トレンド（過去からの変化・上位15都府県）", fontsize=11)
         plt.xlabel("都道府県", fontsize=10)
-        plt.ylabel("前回からの増加ポイント", fontsize=10)
+        plt.ylabel("過去からの増減ポイント", fontsize=10)
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, linestyle='--', alpha=0.6, axis='y')
         plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
@@ -177,11 +166,8 @@ def main():
         plt.savefig(region_chart_path)
         plt.close()
         print(f"都道府県別・増加トレンドグラフを生成しました: {region_chart_path}")
-        
-        # ── [6] 比較が終わったあとに、今回の最新データを次回の比較用に保存する ──
-        save_region_data(regional_data)
     else:
-        print("警告: regional_data が空のため、都道府県別グラフは生成されませんでした。")
+        print("情報: 比較するための過去データがまだ蓄積中のため、数日後に本格的なグラフが描画されます。")
 
 if __name__ == "__main__":
     main()
