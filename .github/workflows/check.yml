@@ -20,6 +20,12 @@ jobs:
         with:
           python-version: '3.10'
 
+      # ▼ 日本語フォント（IPAゴシック）のインストールを追加 ▼
+      - name: Install Japanese Font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-ipafont-gothic
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
