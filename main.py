@@ -130,27 +130,31 @@ def main():
         plt.savefig(chart_path)
         plt.close()
 
-    # ── [4] 都道府県別ランキング（上位15都道府県）の棒グラフ生成 ──
+  # ── [4] 都道府県別日本地図（ヒートマップ）の生成 ──
     print(f"debug: regional_data のデータ数 = {len(regional_data) if regional_data else 0}")
     if regional_data:
-        region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
-        items_list = list(regional_data.items())[:15]
-        
-        # 都道府県名を英語（ローマ字）に変換（辞書になければそのまま）
-        prefs = [PREF_EN.get(item[0], item[0]) for item in items_list]
-        scores = [item[1] for item in items_list]
+        try:
+            from japanmap import paint
+            region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
 
-        plt.figure(figsize=(10, 4.5))
-        plt.bar(prefs, scores, color='#3498db')
-        plt.title("Influenza Search Interest by Region (Top 15 Prefectures)", fontsize=11)
-        plt.xlabel("Prefecture")
-        plt.ylabel("Search Index")
-        plt.xticks(rotation=45, ha='right')
-        plt.grid(True, linestyle='--', alpha=0.6, axis='y')
-        plt.tight_layout()
-        plt.savefig(region_chart_path)
-        plt.close()
-        print(f"都道府県別グラフを生成しました: {region_chart_path}")
+            plt.figure(figsize=(7, 7))
+            # 日本地図のヒートマップを描画（青系のグラデーション）
+            plt.imshow(paint(regional_data, cmap='Blues'))
+            plt.title("Influenza Search Interest by Region (Japan Map)", fontsize=12)
+            plt.axis('off')
+
+            # カラーバーの追加
+            sm = plt.cm.ScalarMappable(cmap='Blues', norm=plt.Normalize(vmin=0, vmax=100))
+            sm.set_array([])
+            cbar = plt.colorbar(sm, fraction=0.03, pad=0.04)
+            cbar.set_label("Search Index (0-100)")
+
+            plt.tight_layout()
+            plt.savefig(region_chart_path, dpi=150)
+            plt.close()
+            print(f"都道府県別日本地図グラフを生成しました: {region_chart_path}")
+        except Exception as e:
+            print(f"日本地図の生成に失敗しました: {e}")
     else:
         print("警告: regional_data が空のため、都道府県別グラフは生成されませんでした。")
 
