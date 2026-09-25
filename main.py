@@ -1,40 +1,71 @@
-import feedparser
-from pytrends.request import TrendReq
+import os
+import json
 import datetime
+import matplotlib.pyplot as plt
 
-# 1. 厚生労働省などのRSSから新着情報を取得する例
-def check_mhlw_infuenza_rss():
-    rss_url = "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/kenkou/kekkaku-kansensou/index.xml" # ※例のURL
-    feed = feedparser.parse(rss_url)
-    
-    recent_news = []
-    today = datetime.date.today()
-    
-    for entry in feed.entries:
-        # 直近数日以内の発表をチェック
-        # published_parsed などをパースして判定
-        recent_news.append(entry.title)
-        
-    return recent_news
+DATA_FILE = "data/history.json"
 
-# 2. Google Trendsで「インフルエンザ」の検索意欲の立ち上がりを見る例
-def check_google_trends():
-    pytrends = TrendReq(hl='ja-JP', tz=324)
-    kw_list = ["インフルエンザ"]
-    pytrends.build_payload(kw_list, timeframe='today 1-m', geo='JP')
-    data = pytrends.interest_over_time()
+def load_history():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_history(history):
+    os.makedirs("data", exist_ok=True)
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+def main():
+    today = datetime.date.today().isoformat()
+    history = load_history()
     
-    if not data.empty:
-        # 直近の検索ボリュームの傾き（トレンド）を計算
-        recent_trend = data['インフルエンザ'].tail(7).mean()
-        previous_trend = data['インフルエンザ'].head(7).mean()
-        if recent_trend > previous_trend * 1.5:  
-            return True, "検索数が急増しています（流行前の予兆の可能性）"
-    return False, ""
+    # ── [1] 最新データの取得（例としてダミーまたはAPI値を使用） ──
+    # ※実際にはここで Google Trends や RSS から値を取得します
+    current_value = 75  # 例：現在のトレンドスコア
+    
+    # 履歴に今日のデータがなければ追加
+    if not any(item['date'] == today for item in history):
+        history.append({"date": today, "value": current_value})
+        # 過去30日分程度に絞る場合
+        history = history[-30:]
+        save_history(history)
+    
+    if len(history) < 2:
+        print("データ蓄積中のため、分析をスキップします。")
+        return
+
+    # ── [2] 現状分析と未来予測（簡易ロジック） ──
+    dates = [item['date'] for item in history]
+    values = [item['value'] for item in history]
+    
+    recent_change = values[-1] - values[-5] if len(values) >= 5 else 0
+    
+    if recent_change > 10:
+        outlook = "【警告】感染リスクの急ピッチな立ち上がりが見られます。今後2週間で注意報レベルに達する可能性があります。"
+    elif recent_change > 0:
+        outlook = "【注意】緩やかな増加傾向にあります。今後の推移に注意が必要です。"
+    else:
+        outlook = "【安定】現在のところ大きな変動はなく、落ち着いた推移をしています。"
+
+    print("--- 感染症トレンド予測レポート ---")
+    print(f"本日 ({today}) の状況: スコア {current_value}")
+    print(f"展望予測: {outlook}")
+
+    # ── [3] グラフの自動生成 ──
+    plt.figure(figsize=(10, 5))
+    plt.plot(dates, values, marker='o', color='b', label='Historical Trend')
+    plt.title("Infection Risk Trend & Forecast Monitor")
+    plt.xlabel("Date")
+    plt.ylabel("Index / Score")
+    plt.xticks(rotation=45)
+    plt.grid(True)
+    plt.tight_layout()
+    
+    os.makedirs("output", exist_ok=True)
+    plt.savefig("output/trend_chart.png")
+    plt.close()
+    print("グラフ画像を output/trend_chart.png に保存しました。")
 
 if __name__ == "__main__":
-    print("衛生・医療情報ソースの巡回を開始します...")
-    # 実行処理
-    trending, msg = check_google_trends()
-    if trending:
-        print(f"[警告] {msg}")
+    main()
