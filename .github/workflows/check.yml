@@ -20,7 +20,6 @@ jobs:
         with:
           python-version: '3.10'
 
-      # ▼ 日本語フォント（IPAゴシック）のインストールを追加 ▼
       - name: Install Japanese Font
         run: |
           sudo apt-get update
@@ -35,7 +34,7 @@ jobs:
         run: |
           python main.py
 
-     - name: Commit and push if data or chart changed
+      - name: Commit and push if data or chart changed
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
