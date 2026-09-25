@@ -115,6 +115,7 @@ def main():
         plt.close()
 
     # ── [4] 都道府県別ランキング（上位15都道府県）の棒グラフ生成 ──
+    print(f"debug: regional_data のデータ数 = {len(regional_data) if regional_data else 0}")
     if regional_data:
         region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
         # 辞書の要素をリスト化してから上位15件を抽出
@@ -133,6 +134,8 @@ def main():
         plt.savefig(region_chart_path)
         plt.close()
         print(f"都道府県別グラフを生成しました: {region_chart_path}")
+    else:
+        print("警告: regional_data が空のため、都道府県別グラフは生成されませんでした。")
 
 if __name__ == "__main__":
     main()
