@@ -2,13 +2,14 @@ import os
 import json
 import datetime
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 from pytrends.request import TrendReq
 
 DATA_FILE = "data/history.json"
 REGION_FILE = "data/region_latest.json"
 OUTPUT_DIR = "output"
 
-# 都道府県名を英語（ローマ字）に変換する辞書
+# 都道府県名を英語（ローマ字）に変換する辞書（必要に応じて残しています）
 PREF_EN = {
     "北海道": "Hokkaido", "青森県": "Aomori", "岩手県": "Iwate", "宮城県": "Miyagi",
     "秋田県": "Akita", "山形県": "Yamagata", "福島県": "Fukushima", "茨城県": "Ibaraki",
@@ -130,15 +131,23 @@ def main():
         plt.savefig(chart_path)
         plt.close()
 
-# ── [4] 都道府県別ランキングのグラフ生成（日本語対応） ──
+    # ── [4] 都道府県別ランキングのグラフ生成（日本語フォント直接指定） ──
     print(f"debug: regional_data のデータ数 = {len(regional_data) if regional_data else 0}")
     if regional_data:
-        try:
-            import matplotlib.font_manager as fm
-            # インストールしたパッケージ（fonts-ipafont-gothic）に合わせて 'IPAGothic' に指定
-            plt.rcParams['font.family'] = 'IPAGothic'
-        except:
-            pass
+        # Linux環境でIPAゴシックのパスを直接探して適用する
+        font_path = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"  # 標準パスの例、またはIPAフォントのパス
+        if not os.path.exists(font_path):
+            # 代替としてシステムからIPAGothicを探す
+            for f in fm.findSystemFonts(fontpaths=None, fontext='ttf'):
+                if 'ipag' in f.lower() or 'gothic' in f.lower():
+                    font_path = f
+                    break
+        
+        if os.path.exists(font_path):
+            jp_font = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = jp_font.get_name()
+        else:
+            plt.rcParams['font.family'] = 'sans-serif'
 
         region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
         items_list = list(regional_data.items())[:15]
