@@ -130,13 +130,13 @@ def main():
         plt.savefig(chart_path)
         plt.close()
 
- # ── [4] 都道府県別ランキングのグラフ生成（日本語対応） ──
+# ── [4] 都道府県別ランキングのグラフ生成（日本語対応） ──
     print(f"debug: regional_data のデータ数 = {len(regional_data) if regional_data else 0}")
     if regional_data:
         try:
             import matplotlib.font_manager as fm
-            # Linux環境（GitHub Actions）でIPAゴシックを適用
-            plt.rcParams['font.family'] = 'IPAexGothic'
+            # インストールしたパッケージ（fonts-ipafont-gothic）に合わせて 'IPAGothic' に指定
+            plt.rcParams['font.family'] = 'IPAGothic'
         except:
             pass
 
