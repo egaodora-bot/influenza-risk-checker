@@ -117,13 +117,12 @@ def main():
     # ── [4] 都道府県別ランキング（上位15都道府県）の棒グラフ生成 ──
     if regional_data:
         region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
-        # 上位15件を抽出してグラフ化（見やすくするため）
-        top_regions = dict(list(regional_data.items()[:15]))
-        prefs = list(top_regions.keys())
-        scores = list(top_regions.values())
+        # 辞書の要素をリスト化してから上位15件を抽出
+        items_list = list(regional_data.items())[:15]
+        prefs = [item[0] for item in items_list]
+        scores = [item[1] for item in items_list]
 
         plt.figure(figsize=(10, 4.5))
-        # 綺麗に見せるため横方向、あるいは色分け
         plt.bar(prefs, scores, color='#3498db')
         plt.title("Influenza Search Interest by Region (Top 15 Prefectures)", fontsize=11)
         plt.xlabel("Prefecture")
