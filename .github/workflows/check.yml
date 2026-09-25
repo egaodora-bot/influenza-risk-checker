@@ -1,13 +1,16 @@
-name: Influenza Risk Checker
+name: run-checker
 
 on:
+  workflow_dispatch:
   schedule:
-    - cron: '0 8 * * *' # 毎日日本時間の17:00 (UTC 8:00) に実行
-  workflow_dispatch: # 手動でも実行できるようにする
+    - cron: '0 8 * * *'  # 毎日朝8時に自動実行
 
 jobs:
   run-checker:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # リポジトリへ自動保存するために必須の権限
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,9 +22,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install matplotlib requests
 
       - name: Run script
         run: |
           python main.py
+
+      - name: Commit and push if data or chart changed
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/trend_chart.png data/history.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto: Update trend chart and history" && git push)
