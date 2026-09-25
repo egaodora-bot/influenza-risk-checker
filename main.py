@@ -26,13 +26,11 @@ def save_history(history):
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 def save_region_data(region_data):
-    """都道府県別の最新データを保存する"""
     os.makedirs("data", exist_ok=True)
     with open(REGION_FILE, "w", encoding="utf-8") as f:
         json.dump(region_data, f, ensure_ascii=False, indent=2)
 
 def fetch_influenza_trend():
-    """Google Trendsから全国の過去1ヶ月分の時系列データを取得する"""
     try:
         pytrends = TrendReq(hl='ja-JP', tz=540)
         pytrends.build_payload(['インフルエンザ'], timeframe='today 1-m', geo='JP')
@@ -51,14 +49,12 @@ def fetch_influenza_trend():
     return None
 
 def fetch_regional_trend():
-    """Google Trendsから都道府県別の検索トレンドを取得する"""
     try:
         pytrends = TrendReq(hl='ja-JP', tz=540)
         pytrends.build_payload(['インフルエンザ'], timeframe='today 1-m', geo='JP')
         df_region = pytrends.interest_by_region(resolution='REGION', inc_low_vol=True, inc_geo_code=False)
         
         if not df_region.empty and 'インフルエンザ' in df_region.columns:
-            # スコアが高い順にソート
             sorted_df = df_region.sort_values(by='インフルエンザ', ascending=False)
             regional_data = {}
             for pref, row in sorted_df.iterrows():
@@ -97,35 +93,47 @@ def main():
     regional_data = fetch_regional_trend()
     if regional_data:
         save_region_data(regional_data)
-        print("都道府県別のトレンドデータを更新しました（上位3件）:")
-        for pref, score in list(regional_data.items())[:3]:
-            print(f"  {pref}: {score}")
 
-    if len(history) == 0:
-        return
-
-    dates = [item['date'] for item in history]
-    values = [item['value'] for item in history]
-
-    # ── [3] グラフ画像の自動生成 ──
+    # ── [3] 全国トレンド時系列グラフの生成 ──
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     chart_path = os.path.join(OUTPUT_DIR, "trend_chart.png")
 
-    plt.figure(figsize=(10, 4.5))
-    plt.plot(dates, values, marker='o', color='#e74c3c', linewidth=2, label='Influenza Search Index (Japan)')
-    
-    plt.title("Infection Risk Trend Monitor (Google Trends: Influenza)", fontsize=11)
-    plt.xlabel("Date")
-    plt.ylabel("Search Interest (0-100)")
-    
-    plt.xticks(rotation=45)
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.legend()
-    plt.tight_layout()
-    
-    plt.savefig(chart_path)
-    plt.close()
-    print(f"時系列グラフを生成しました: {chart_path} (データ数: {len(history)}件)")
+    if len(history) > 0:
+        dates = [item['date'] for item in history]
+        values = [item['value'] for item in history]
+
+        plt.figure(figsize=(10, 4.5))
+        plt.plot(dates, values, marker='o', color='#e74c3c', linewidth=2, label='Influenza Search Index (Japan)')
+        plt.title("Infection Risk Trend Monitor (Google Trends: Influenza)", fontsize=11)
+        plt.xlabel("Date")
+        plt.ylabel("Search Interest (0-100)")
+        plt.xticks(rotation=45)
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(chart_path)
+        plt.close()
+
+    # ── [4] 都道府県別ランキング（上位15都道府県）の棒グラフ生成 ──
+    if regional_data:
+        region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
+        # 上位15件を抽出してグラフ化（見やすくするため）
+        top_regions = dict(list(regional_data.items()[:15]))
+        prefs = list(top_regions.keys())
+        scores = list(top_regions.values())
+
+        plt.figure(figsize=(10, 4.5))
+        # 綺麗に見せるため横方向、あるいは色分け
+        plt.bar(prefs, scores, color='#3498db')
+        plt.title("Influenza Search Interest by Region (Top 15 Prefectures)", fontsize=11)
+        plt.xlabel("Prefecture")
+        plt.ylabel("Search Index")
+        plt.xticks(rotation=45, ha='right')
+        plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+        plt.tight_layout()
+        plt.savefig(region_chart_path)
+        plt.close()
+        print(f"都道府県別グラフを生成しました: {region_chart_path}")
 
 if __name__ == "__main__":
     main()
