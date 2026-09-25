@@ -9,22 +9,6 @@ DATA_FILE = "data/history.json"
 REGION_FILE = "data/region_latest.json"
 OUTPUT_DIR = "output"
 
-# 都道府県名を英語（ローマ字）に変換する辞書（必要に応じて残しています）
-PREF_EN = {
-    "北海道": "Hokkaido", "青森県": "Aomori", "岩手県": "Iwate", "宮城県": "Miyagi",
-    "秋田県": "Akita", "山形県": "Yamagata", "福島県": "Fukushima", "茨城県": "Ibaraki",
-    "栃木県": "Tochigi", "群馬県": "Gunma", "埼玉県": "Saitama", "千葉県": "Chiba",
-    "東京都": "Tokyo", "神奈川県": "Kanagawa", "新潟県": "Niigata", "富山県": "Toyama",
-    "石川県": "Ishikawa", "福井県": "Fukui", "山梨県": "Yamanashi", "長野県": "Nagano",
-    "岐阜県": "Gifu", "静岡県": "Shizuoka", "愛知県": "Aichi", "三重県": "Mie",
-    "滋賀県": "Shiga", "京都府": "Kyoto", "大阪府": "Osaka", "兵庫県": "Hyogo",
-    "奈良県": "Nara", "和歌山県": "Wakayama", "鳥取県": "Tottori", "島根県": "Shimane",
-    "岡山県": "Okayama", "広島県": "Hiroshima", "山口県": "Yamaguchi", "徳島県": "Tokushima",
-    "香川県": "Kagawa", "愛媛県": "Ehime", "高知県": "Kochi", "福岡県": "Fukuoka",
-    "佐賀県": "Saga", "長崎県": "Nagasaki", "熊本県": "Kumamoto", "大分県": "Oita",
-    "宮崎県": "Miyazaki", "鹿児島県": "Kagoshima", "沖縄県": "Okinawa"
-}
-
 def load_history():
     if os.path.exists(DATA_FILE):
         try:
@@ -41,6 +25,18 @@ def save_history(history):
     os.makedirs("data", exist_ok=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+def load_previous_region_data():
+    if os.path.exists(REGION_FILE):
+        try:
+            with open(REGION_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if not content:
+                    return {}
+                return json.loads(content)
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 def save_region_data(region_data):
     os.makedirs("data", exist_ok=True)
@@ -72,9 +68,8 @@ def fetch_regional_trend():
         df_region = pytrends.interest_by_region(resolution='REGION', inc_low_vol=True, inc_geo_code=False)
         
         if not df_region.empty and 'インフルエンザ' in df_region.columns:
-            sorted_df = df_region.sort_values(by='インフルエンザ', ascending=False)
             regional_data = {}
-            for pref, row in sorted_df.iterrows():
+            for pref, row in df_region.iterrows():
                 regional_data[pref] = int(row['インフルエンザ'])
             return regional_data
     except Exception as e:
@@ -106,12 +101,15 @@ def main():
 
     save_history(history)
 
-    # ── [2] 都道府県別データの取得と保存 ──
+    # ── [2] 以前の都道府県別データを読み込み（比較用） ──
+    prev_regional_data = load_previous_region_data()
+
+    # ── [3] 最新の都道府県別データを取得して保存 ──
     regional_data = fetch_regional_trend()
     if regional_data:
         save_region_data(regional_data)
 
-    # ── [3] 全国トレンド時系列グラフの生成 ──
+    # ── [4] 全国トレンド時系列グラフの生成 ──
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     chart_path = os.path.join(OUTPUT_DIR, "trend_chart.png")
 
@@ -131,13 +129,12 @@ def main():
         plt.savefig(chart_path)
         plt.close()
 
-    # ── [4] 都道府県別ランキングのグラフ生成（日本語フォント直接指定） ──
+    # ── [5] 都道府県別の「急増度（前回からの増加量）」ランキンググラフ生成 ──
     print(f"debug: regional_data のデータ数 = {len(regional_data) if regional_data else 0}")
     if regional_data:
-        # Linux環境でIPAゴシックのパスを直接探して適用する
-        font_path = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"  # 標準パスの例、またはIPAフォントのパス
+        # 日本語フォント設定
+        font_path = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
         if not os.path.exists(font_path):
-            # 代替としてシステムからIPAGothicを探す
             for f in fm.findSystemFonts(fontpaths=None, fontext='ttf'):
                 if 'ipag' in f.lower() or 'gothic' in f.lower():
                     font_path = f
@@ -149,23 +146,36 @@ def main():
         else:
             plt.rcParams['font.family'] = 'sans-serif'
 
-        region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
-        items_list = list(regional_data.items())[:15]
+        # 前回データがある場合は「増加量（差分）」を計算。初回などで無い場合は現在の値を使用
+        diff_data = {}
+        for pref, current_val in regional_data.items():
+            prev_val = prev_regional_data.get(pref, current_val) # 初回は差分0または現在値
+            diff_data[pref] = current_val - prev_val
+
+        # 増加量が大きい順にソート（同点の場合は現在のスコアが高い順）
+        sorted_diff = sorted(diff_data.items(), key=lambda x: (x[1], regional_data.get(x[0], 0)), reverse=True)
+        items_list = sorted_diff[:15]
         
         prefs = [item[0] for item in items_list]
-        scores = [item[1] for item in items_list]
+        diffs = [item[1] for item in items_list]
 
+        region_chart_path = os.path.join(OUTPUT_DIR, "region_chart.png")
         plt.figure(figsize=(10, 4.5))
-        plt.bar(prefs, scores, color='#3498db')
-        plt.title("都道府県別インフルエンザ検索関心度（上位15都道府県）", fontsize=11)
+        
+        # 増加傾向がわかりやすいように色を調整（プラスならオレンジ/赤系、0なら青系など）
+        colors = ['#e67e22' if d > 0 else '#3498db' for d in diffs]
+        
+        plt.bar(prefs, diffs, color=colors)
+        plt.title("都道府県別インフルエンザ検索関心度の増加トレンド（前回比・急増上位15都府県）", fontsize=11)
         plt.xlabel("都道府県", fontsize=10)
-        plt.ylabel("検索インデックス", fontsize=10)
+        plt.ylabel("前回からの増加ポイント", fontsize=10)
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, linestyle='--', alpha=0.6, axis='y')
+        plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
         plt.tight_layout()
         plt.savefig(region_chart_path)
         plt.close()
-        print(f"都道府県別グラフを生成しました: {region_chart_path}")
+        print(f"都道府県別・増加トレンドグラフを生成しました: {region_chart_path}")
     else:
         print("警告: regional_data が空のため、都道府県別グラフは生成されませんでした。")
 
